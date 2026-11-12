@@ -7,6 +7,7 @@ import time
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from geometry_msgs.msg import Twist
+from nav_msgs.msg import Odometry
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.clock import Clock
 from rclpy.clock_type import ClockType
@@ -19,6 +20,7 @@ from .audit import AuditLog
 from .core import (Check, CommandMonitor, ScanMonitor, OK,
                    parse_allowlist, positive, publishers_check)
 from .paths import state_directory
+from .plausibility import MotionConsistencyMonitor, ScanContentMonitor
 from .reports import ReportReader
 
 
@@ -58,6 +60,21 @@ class GlitchedMonitor(Node):
             limits_enabled=self._parameter("command_limits_enabled", False),
             max_linear=self._parameter("max_linear_speed_mps", 0.5),
             max_angular=self._parameter("max_angular_speed_radps", 1.0))
+        self.scan_content = ScanContentMonitor(
+            topic=self.scan.topic,
+            enabled=self._parameter("scan_content_enabled", True),
+            max_invalid_ratio=self._parameter("scan_max_invalid_ratio", 0.95),
+            frozen_frames=int(positive(self._parameter("scan_frozen_frames", 10),
+                                       "scan frozen frames")),
+            stuck_value_ratio=self._parameter("scan_stuck_value_ratio", 0.98),
+            history_s=self._parameter("scan_content_history_s", 5.0))
+        # Opt-in: mismatch tolerance must be calibrated per robot, exactly like
+        # the command limits above.
+        self.motion = MotionConsistencyMonitor(
+            enabled=self._parameter("motion_consistency_enabled", False),
+            mismatch_tolerance_mps=self._parameter("motion_mismatch_tolerance_mps", 0.3),
+            dwell_s=self._parameter("motion_mismatch_dwell_s", 2.0))
+        self.odom_topic = self._parameter("odom_topic", "/odom")
         self.publishers_enabled = self._parameter("publisher_check_enabled", False)
         self.allowlist = parse_allowlist(self._parameter("publisher_allowlist", []))
         directory = state_directory(self._parameter("state_dir", ""))
@@ -74,12 +91,16 @@ class GlitchedMonitor(Node):
         # common sensor drivers; a missing connection becomes degraded coverage.
         self.scan_subscription = None
         self.command_subscription = None
-        if self.scan.enabled:
+        self.odom_subscription = None
+        if self.scan.enabled or self.scan_content.enabled:
             self.scan_subscription = self.create_subscription(
                 LaserScan, self.scan.topic, self._on_scan, qos_profile_sensor_data)
-        if self.commands.enabled:
+        if self.commands.enabled or self.motion.enabled:
             self.command_subscription = self.create_subscription(
                 Twist, self.commands.topic, self._on_command, qos_profile_sensor_data)
+        if self.motion.enabled:
+            self.odom_subscription = self.create_subscription(
+                Odometry, self.odom_topic, self._on_odometry, qos_profile_sensor_data)
         self.diagnostics = self.create_publisher(DiagnosticArray, "/diagnostics", 10)
         # A ROS-time timer would stop reporting when /clock pauses. Always tick
         # using a steady clock; only capture timestamps use ROS time.
@@ -99,12 +120,27 @@ class GlitchedMonitor(Node):
         value = (stamp.sec + stamp.nanosec / 1_000_000_000.0
                  if stamp.sec >= 0 and 0 <= stamp.nanosec < 1_000_000_000
                  else math.nan)
-        self.scan.record(value, steady=time.monotonic(), ros_now=self._ros_now())
+        steady = time.monotonic()
+        if self.scan.enabled:
+            self.scan.record(value, steady=steady, ros_now=self._ros_now())
+        if self.scan_content.enabled:
+            self.scan_content.record(message.ranges,
+                                     range_min=message.range_min,
+                                     range_max=message.range_max, steady=steady)
 
     def _on_command(self, message):
         values = [getattr(vector, axis) for vector in (message.linear, message.angular)
                   for axis in ("x", "y", "z")]
-        self.commands.record(values, steady=time.monotonic())
+        steady = time.monotonic()
+        if self.commands.enabled:
+            self.commands.record(values, steady=steady)
+        if self.motion.enabled:
+            self.motion.record_command(values[:3], steady=steady)
+
+    def _on_odometry(self, message):
+        velocity = message.twist.twist.linear
+        self.motion.record_odometry((velocity.x, velocity.y, velocity.z),
+                                    steady=time.monotonic())
 
     def _publisher_check(self):
         if not self.publishers_enabled or not self.allowlist:
@@ -136,6 +172,10 @@ class GlitchedMonitor(Node):
             self._guard("scan", lambda: self.scan.evaluate(steady=steady, ros_now=ros_now)),
             self._guard("commands", lambda: self.commands.evaluate(steady=steady)),
             self._guard("publishers", self._publisher_check),
+            self._guard("scan_content",
+                        lambda: self.scan_content.evaluate(steady=steady)),
+            self._guard("motion_consistency",
+                        lambda: self.motion.evaluate(steady=steady)),
         ]
         checks.extend(self.report_reader.checks(now=time.time()))
         try:

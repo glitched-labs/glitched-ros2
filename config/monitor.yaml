@@ -18,5 +18,18 @@ glitched_monitor:
     # One /topic=/fully/qualified/node entry for each permitted publisher.
     # Omit this parameter until configured; empty YAML arrays have no type in rcl.
     # publisher_allowlist: ["/cmd_vel=/control/controller"]
+    # Sensor content plausibility (values, not timestamps).
+    scan_content_enabled: true
+    scan_max_invalid_ratio: 0.95
+    scan_frozen_frames: 10
+    scan_stuck_value_ratio: 0.98
+    scan_content_history_s: 5.0
+    # Opt-in; calibrate tolerance and dwell on YOUR base before enabling.
+    # Watch gap_mps in /diagnostics during normal teleop, set tolerance ~2x
+    # the observed p99 and dwell longer than your worst acceleration ramp.
+    motion_consistency_enabled: false
+    odom_topic: /odom
+    motion_mismatch_tolerance_mps: 0.3
+    motion_mismatch_dwell_s: 2.0
     max_scan_age_s: 86400.0
     state_dir: ""
