@@ -1,0 +1,22 @@
+glitched_monitor:
+  ros__parameters:
+    use_sim_time: false
+    scan_enabled: true
+    scan_topic: /scan
+    startup_grace_s: 5.0
+    scan_timeout_s: 0.6
+    future_tolerance_s: 0.1
+    clock_stall_s: 1.0
+    command_enabled: true
+    command_topic: /cmd_vel
+    command_timeout_s: 1.0
+    # Example limits only; calibrate them for your robot before enabling.
+    command_limits_enabled: false
+    max_linear_speed_mps: 0.5
+    max_angular_speed_radps: 1.0
+    publisher_check_enabled: false
+    # One /topic=/fully/qualified/node entry for each permitted publisher.
+    # Omit this parameter until configured; empty YAML arrays have no type in rcl.
+    # publisher_allowlist: ["/cmd_vel=/control/controller"]
+    max_scan_age_s: 86400.0
+    state_dir: ""

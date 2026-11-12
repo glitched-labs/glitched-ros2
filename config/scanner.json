@@ -1,0 +1,7 @@
+{
+  "rootfs": "/",
+  "project_dirs": [],
+  "interval_s": 21600,
+  "timeout_s": 300,
+  "trivy_executable": "trivy"
+}

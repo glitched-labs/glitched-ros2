@@ -1,0 +1,22 @@
+{
+  "SchemaVersion": 2,
+  "ArtifactName": "/example-project",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": "requirements.txt",
+      "Class": "lang-pkgs",
+      "Type": "pip",
+      "Vulnerabilities": [
+        {
+          "VulnerabilityID": "GLITCHED-DEMO-002",
+          "PkgName": "demo-python-library",
+          "InstalledVersion": "2.0.0",
+          "FixedVersion": "",
+          "Severity": "MEDIUM",
+          "Title": "Synthetic test finding; not a real vulnerability"
+        }
+      ]
+    }
+  ]
+}
